@@ -1,0 +1,6 @@
+{
+  "name": "GoldTrade - Beta (entry zone)",
+  "description": "An AI-powered application to recognize fractal patterns in financial market images and provide potential trading insights. Users upload chart images, and the AI analyzes them for patterns and suggests decisions.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
