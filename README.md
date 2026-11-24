@@ -1,8 +1,19 @@
 # Goltrade Beta
 
-Goltrade Beta es una aplicación web para el análisis de patrones en gráficos financieros mediante IA. Permite cargar una imagen del gráfico principal, una imagen opcional con el resultado esperado y datos de anotaciones exportados desde CVAT para obtener un reporte de análisis fractal y una decisión orientativa de trading.
+Goltrade Beta es una aplicación web para el análisis de patrones en gráficos financieros mediante IA. Permite cargar una imagen del gráfico principal, una imagen opcional con el resultado esperado y, opcionalmente, anotaciones exportadas desde CVAT para generar un informe de trading basado en Gemini API.
 
 > Esta aplicación es una herramienta de apoyo basada en imágenes y resultados generados por IA. No constituye asesoría financiera ni garantiza resultados de inversión.
+
+## Actualizaciones recientes
+
+- Nuevo informe visual de análisis fractal con patrones, razonamiento, confianza y decisión propuesta.
+- Soporte para carga de una imagen principal y una imagen opcional del resultado esperado.
+- Importación de anotaciones CVAT en formato JSON, con validación de tamaño y contenido.
+- Historial local de análisis disponible durante las últimas 24 horas.
+- Sistema local de créditos con descuento al completar un análisis.
+- Interfaz disponible en español e inglés.
+- Flujo de navegación mejorado entre carga, análisis, reporte e historial.
+- Gestión de estados de carga, errores y respuestas inválidas del proveedor de IA.
 
 ## Características
 
@@ -69,9 +80,9 @@ npm run dev
    - Un archivo JSON exportado desde CVAT con las anotaciones.
 5. Pulsa **Analizar**.
 6. Consulta el informe en la pestaña **Reporte de análisis**.
-7. Selecciona cualquier elemento del panel de historial para volver a consultar un resultado anterior.
+7. Selecciona cualquier elemento del historial para volver a consultar un resultado anterior.
 
-Los resultados permanecen en el navegador mediante `localStorage` durante un máximo de 24 horas. Los datos no se envían a un servidor propio, aunque las imágenes seleccionadas se procesan mediante la API configurada de Gemini.
+Los resultados permanecen en el navegador mediante `localStorage` durante un máximo de 24 horas. Los datos no se envían a un servidor propio, aunque las imágenes seleccionadas se procesan mediante Gemini API.
 
 ### Exportación desde CVAT
 
