@@ -1,5 +1,6 @@
-import { GoogleGenAI, Type, Content } from "@google/genai";
-import { ImageFile, AnalysisData, Prediction } from "../types";
+
+import { GoogleGenAI, GenerateContentResponse, Part, Chat } from "@google/genai";
+import { FractalAnalysisResult, TradingDecision, ConfidenceLevel, isValidTradingDecision, isValidConfidenceLevel, IdentifiedPattern, BoundingBox } from '../types';
 import { GEMINI_MODEL_NAME, ANALYSIS_PROMPT } from '../constants';
 
 const API_KEY = process.env.GEMINI_API_KEY;
