@@ -1,8 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { FractalAnalysisResult, TradingDecision, ConfidenceLevel, IdentifiedPattern, BoundingBox } from '../types';
 import LightbulbIcon from './icons/LightbulbIcon';
 import ChartIcon from './icons/ChartIcon';
 import { useTranslations } from '../hooks/useTranslations';
+import { ASSET_CATEGORIES } from '../constants';
 
 import ArrowUpCircleIcon from './icons/ArrowUpCircleIcon';
 import ArrowDownCircleIcon from './icons/ArrowDownCircleIcon';
@@ -16,6 +18,11 @@ import MapPinIcon from './icons/MapPinIcon';
 import HandRaisedIcon from './icons/HandRaisedIcon';
 import TrophyIcon from './icons/TrophyIcon';
 import EyeIcon from './icons/EyeIcon';
+import PresentationChartBarIcon from './icons/PresentationChartBarIcon';
+import ClipboardDocumentIcon from './icons/ClipboardDocumentIcon';
+import ClipboardDocumentCheckIcon from './icons/ClipboardDocumentCheckIcon';
+import CameraIcon from './icons/CameraIcon';
+
 
 interface ImageFileData {
   base64Image: string;
@@ -27,9 +34,51 @@ interface FractalAnalysisDisplayProps {
   primaryImageDataForAnnotation?: ImageFileData | null;
 }
 
+const HighlightedText: React.FC<{ text: string | undefined; assetName?: string; }> = ({ text, assetName }) => {
+    if (!text) return null;
+
+    const keywordConfig = [
+        { words: ['BUY', 'COMPRA', 'Take Profit', 'Take Profit Levels', 'Niveles de Take Profit'], className: 'text-green-400 font-bold' },
+        { words: ['SELL', 'VENTA', 'Stop Loss', 'Stop Loss Levels', 'Niveles de Stop Loss'], className: 'text-red-400 font-bold' },
+        { words: ['HOLD', 'ESPERAR'], className: 'text-yellow-400 font-bold' },
+        { words: ['puntos recalcados'], className: 'text-yellow-400 font-bold' },
+    ];
+    
+    if (assetName) {
+        keywordConfig.push({ words: [assetName], className: 'text-blue-400 font-bold' });
+    }
+
+    const allKeywords = keywordConfig.flatMap(config => config.words);
+    
+    const regex = new RegExp(`(${allKeywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+    
+    const parts = text.split(regex);
+
+    return (
+        <>
+            {parts.map((part, index) => {
+                if (!part) return null;
+                const matchingConfig = keywordConfig.find(config => 
+                    config.words.some(word => word.toLowerCase() === part.toLowerCase())
+                );
+                
+                if (matchingConfig) {
+                    return <strong key={index} className={matchingConfig.className}>{part}</strong>;
+                } else {
+                    return <span key={index}>{part}</span>;
+                }
+            })}
+        </>
+    );
+};
+
 const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysis, primaryImageDataForAnnotation }) => {
   const { t, currentLanguage } = useTranslations();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+
 
   useEffect(() => {
     if (!analysis || !primaryImageDataForAnnotation || !canvasRef.current) {
@@ -221,8 +270,135 @@ const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysi
   const { color: decisionColor, bgColor: decisionBgColor, Icon: DecisionIcon } = getDecisionStyles(analysis.trading_decision);
   const { text: confidenceText, color: confidenceColor, Icon: ConfidenceIcon } = getConfidenceStyles(analysis.confidence_level);
 
-  const InfoSection: React.FC<{titleKey: any, content?: string, Icon: React.FC<any>, iconClass?: string, contentClass?: string}> = ({titleKey, content, Icon, iconClass="text-primary-400", contentClass=""}) => {
-    if (!content || content.toLowerCase() === "not applicable" || content.toLowerCase() === "n/a") return null;
+  const translatedDecision = translateTradingDecision(analysis.trading_decision);
+  const signalText = (analysis.trading_decision === TradingDecision.BUY || analysis.trading_decision === TradingDecision.SELL) && analysis.assetName
+    ? `${translatedDecision} - ${analysis.assetName}`
+    : translatedDecision;
+    
+    
+  const generateSignalCanvas = async (): Promise<HTMLCanvasElement | null> => {
+    if (!analysis || !canvasRef.current) return null;
+    
+    const sourceCanvas = canvasRef.current;
+
+    const PADDING = 40;
+    const HEADER_HEIGHT = 100;
+    const FOOTER_HEIGHT = 180;
+    const LINE_SPACING = 35;
+    const FONT_FAMILY = 'Oswald, sans-serif';
+
+    const captureCanvas = document.createElement('canvas');
+    captureCanvas.width = sourceCanvas.width + PADDING * 2;
+    captureCanvas.height = sourceCanvas.height + HEADER_HEIGHT + FOOTER_HEIGHT + PADDING;
+
+    const ctx = captureCanvas.getContext('2d');
+    if (!ctx) return null;
+    
+    ctx.fillStyle = '#111827'; // secondary-900
+    ctx.fillRect(0, 0, captureCanvas.width, captureCanvas.height);
+
+    let currentY = PADDING;
+
+    // Header
+    ctx.textAlign = 'center';
+    ctx.font = `bold 26px ${FONT_FAMILY}`;
+    ctx.fillStyle = '#f59e0b'; // gold-500
+    ctx.fillText('GoldTrade AI Signal', captureCanvas.width / 2, currentY + 25);
+    currentY += 50;
+
+    // Signal
+    ctx.font = `bold 36px ${FONT_FAMILY}`;
+    const signalColor = decisionColor === 'text-green-400' ? '#4ade80' : decisionColor === 'text-red-400' ? '#f87171' : decisionColor === 'text-yellow-400' ? '#facc15' : '#9ca3af';
+    ctx.fillStyle = signalColor;
+    ctx.fillText(signalText, captureCanvas.width / 2, currentY + 30);
+    currentY += 50;
+
+    // Chart
+    ctx.drawImage(sourceCanvas, PADDING, currentY);
+    currentY += sourceCanvas.height;
+    currentY += PADDING + 10;
+
+    // Footer info
+    ctx.textAlign = 'left';
+    const drawInfoLine = (label: string, value: string, valueColor: string) => {
+        ctx.font = `22px ${FONT_FAMILY}`;
+        ctx.fillStyle = '#d1d5db'; // secondary-300
+        const labelMetrics = ctx.measureText(label);
+        ctx.fillText(label, PADDING, currentY);
+        
+        ctx.font = `bold 22px ${FONT_FAMILY}`;
+        ctx.fillStyle = valueColor;
+        ctx.fillText(value, PADDING + labelMetrics.width + 15, currentY);
+        currentY += LINE_SPACING;
+    };
+    
+    const confidenceHexColor = confidenceColor === 'text-green-400' ? '#4ade80' : confidenceColor === 'text-yellow-400' ? '#facc15' : confidenceColor === 'text-red-400' ? '#f87171' : '#9ca3af';
+    drawInfoLine(`${t('analysisDisplayConfidenceLevel')}:`, confidenceText, confidenceHexColor);
+    
+    currentY += 10;
+    
+    if (entryPointsToDisplay) drawInfoLine(`${t('analysisDisplayEntryPoints')}:`, entryPointsToDisplay, '#60a5fa');
+    if (stopLossToDisplay) drawInfoLine(`${t('analysisDisplayStopLoss')}:`, stopLossToDisplay, '#f87171');
+    if (takeProfitToDisplay) drawInfoLine(`${t('analysisDisplayTakeProfit')}:`, takeProfitToDisplay, '#4ade80');
+
+    return captureCanvas;
+  };
+
+  const handleCapture = async () => {
+    if (!analysis || !canvasRef.current || isCapturing || isCopying) return;
+
+    setIsCapturing(true);
+    try {
+        const captureCanvas = await generateSignalCanvas();
+        if (!captureCanvas) return;
+
+        const dataUrl = captureCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        link.download = `${t('captureFilenamePrefix')}_${analysis.assetName || 'Asset'}_${date}.png`;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    } catch (error) {
+        console.error("Failed to capture signal image:", error);
+    } finally {
+        setIsCapturing(false);
+    }
+  };
+  
+  const handleCopyImage = async () => {
+    if (!analysis || !canvasRef.current || isCapturing || isCopying) return;
+    setIsCopying(true);
+    setCopySuccess(false);
+
+    try {
+        const captureCanvas = await generateSignalCanvas();
+        if (!captureCanvas) return;
+
+        captureCanvas.toBlob(async (blob) => {
+            if (blob) {
+                try {
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': blob })
+                    ]);
+                    setCopySuccess(true);
+                    setTimeout(() => setCopySuccess(false), 2000);
+                } catch (clipError) {
+                    console.error('Failed to copy image to clipboard:', clipError);
+                }
+            }
+        }, 'image/png');
+    } catch (err) {
+        console.error("Error generating image for copy:", err);
+    } finally {
+        setIsCopying(false);
+    }
+  };
+
+
+  const InfoSection: React.FC<{titleKey: any, content?: React.ReactNode, Icon: React.FC<any>, iconClass?: string, contentClass?: string}> = ({titleKey, content, Icon, iconClass="text-primary-400", contentClass=""}) => {
+    if (!content || (typeof content === 'string' && (content.toLowerCase() === "not applicable" || content.toLowerCase() === "n/a"))) return null;
     return (
         <div>
             <h3 className="text-lg font-semibold text-primary-300 mb-2 flex items-center">
@@ -237,14 +413,50 @@ const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysi
   }
 
   const KeyLevelItem: React.FC<{labelKey: any, value?: string, Icon: React.FC<any>, iconColorClass: string}> = ({ labelKey, value, Icon, iconColorClass }) => {
+    const [isCopied, setIsCopied] = useState(false);
+    
     if (!value || value.toLowerCase() === "not applicable" || value.toLowerCase() === "n/a") return null;
+
+    const handleCopy = () => {
+      if (value) {
+        // Extracts sequences of digits and decimal points.
+        const numbers = value.match(/[\d.]+/g);
+
+        // Joins all found numbers without spaces and copies to clipboard.
+        // e.g., "Entry at 1.1230" becomes "1.1230"
+        const textToCopy = numbers ? numbers.join('') : '';
+
+        if (textToCopy) {
+            navigator.clipboard.writeText(textToCopy);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        }
+      }
+    };
+
     return (
-        <div className="flex items-start space-x-2">
-            <Icon className={`w-5 h-5 mt-0.5 flex-shrink-0 ${iconColorClass}`} />
-            <div>
+        <div className="flex items-center space-x-3">
+            <Icon className={`w-6 h-6 flex-shrink-0 ${iconColorClass}`} />
+            <div className="flex-grow">
                 <span className="text-sm font-medium text-secondary-300">{t(labelKey)}:</span>
-                <p className="text-base text-primary-300 ml-1">{value}</p>
+                <p className="text-base text-primary-300 whitespace-pre-wrap">{value}</p>
             </div>
+             <button
+                onClick={handleCopy}
+                className={`ml-4 flex-shrink-0 p-2 rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-secondary-700 ${
+                    isCopied
+                    ? 'bg-green-600 focus:ring-green-500 scale-110'
+                    : 'bg-secondary-600 hover:bg-primary-700 focus:ring-primary-500'
+                }`}
+                aria-label={isCopied ? t('copiedButtonLabel') : t('copyButtonLabel', { level: t(labelKey) })}
+                title={isCopied ? t('copiedButtonLabel') : t('copyButtonLabel', { level: t(labelKey) })}
+            >
+                {isCopied ? (
+                    <ClipboardDocumentCheckIcon className="w-5 h-5 text-white" />
+                ) : (
+                    <ClipboardDocumentIcon className="w-5 h-5 text-secondary-200" />
+                )}
+            </button>
         </div>
     );
   };
@@ -258,10 +470,49 @@ const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysi
 
   return (
     <div className="w-full space-y-6">
-      <h2 className="text-2xl font-semibold text-primary-400 flex items-center">
-        <ChartIcon className="w-7 h-7 mr-3 text-primary-500" />
-        {t('analysisDisplayResultsTitle')}
-      </h2>
+      <div className="flex justify-between items-center flex-wrap gap-4">
+        <h2 className="text-2xl font-semibold text-primary-400 flex items-center">
+            <ChartIcon className="w-7 h-7 mr-3 text-primary-500" />
+            {t('analysisDisplayResultsTitle')}
+        </h2>
+        
+        <div className="flex items-center space-x-2">
+            <button
+                onClick={handleCapture}
+                title={t('captureSignalButtonTitle')}
+                disabled={isCapturing || isCopying}
+                className="p-2 bg-secondary-700 text-primary-300 rounded-lg hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+                {isCapturing ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                ) : (
+                    <CameraIcon className="w-5 h-5" />
+                )}
+            </button>
+
+            <button
+                onClick={handleCopyImage}
+                title={copySuccess ? t('copiedButtonLabel') : t('copySignalButtonTitle')}
+                disabled={isCapturing || isCopying}
+                className="p-2 bg-secondary-700 text-primary-300 rounded-lg hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+                {isCopying ? (
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                ) : copySuccess ? (
+                    <ClipboardDocumentCheckIcon className="w-5 h-5 text-green-400" />
+                ) : (
+                    <ClipboardDocumentIcon className="w-5 h-5" />
+                )}
+            </button>
+        </div>
+      </div>
+
 
       {primaryImageDataForAnnotation && hasAnnotations && (
         <div className="mt-6 mb-4">
@@ -284,17 +535,17 @@ const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysi
 
       {/* Trading Signal & Confidence */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className={`p-3 sm:p-4 rounded-lg border ${decisionBgColor} flex flex-col`}>
+        <div className={`p-3 sm:p-4 rounded-lg border ${decisionBgColor} flex flex-col items-center justify-center`}>
           <h3 className="text-sm font-medium text-secondary-300 mb-1 flex items-center">
              <DecisionIcon className="w-5 h-5 mr-2 opacity-80" />
             {t('analysisDisplayTradingSignal')}
           </h3>
-          <p className={`text-xl sm:text-2xl font-bold ${decisionColor} mb-2`}>
-            {translateTradingDecision(analysis.trading_decision)}
+          <p className={`text-xl sm:text-2xl font-bold ${decisionColor} text-center`} title={signalText}>
+            <HighlightedText text={signalText} assetName={analysis.assetName} />
           </p>
         </div>
         
-        <div className={`p-3 sm:p-4 rounded-lg border border-secondary-600 bg-secondary-700/30`}>
+        <div className={`p-3 sm:p-4 rounded-lg border border-secondary-600 bg-secondary-700/30 flex flex-col items-center justify-center`}>
             <h3 className="text-sm font-medium text-secondary-300 mb-1 flex items-center">
                 <ConfidenceIcon className="w-5 h-5 mr-2 opacity-80" />
                 {t('analysisDisplayConfidenceLevel')}
@@ -311,17 +562,23 @@ const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysi
       (
         <div>
           <h3 className="text-lg font-semibold text-primary-300 mb-3 flex items-center">
+            <PresentationChartBarIcon className="w-5 h-5 mr-2 text-primary-400" />
             {t('analysisDisplayKeyLevelsTitle')}
           </h3>
           <div className="space-y-3 bg-secondary-700/30 p-3 sm:p-4 rounded-md border border-secondary-600">
             <KeyLevelItem labelKey="analysisDisplayEntryPoints" value={entryPointsToDisplay} Icon={MapPinIcon} iconColorClass="text-blue-400" />
-            <KeyLevelItem labelKey="analysisDisplayStopLoss" value={stopLossToDisplay} Icon={HandRaisedIcon} iconColorClass="text-red-400" />
             <KeyLevelItem labelKey="analysisDisplayTakeProfit" value={takeProfitToDisplay} Icon={TrophyIcon} iconColorClass="text-green-400" />
+            <KeyLevelItem labelKey="analysisDisplayStopLoss" value={stopLossToDisplay} Icon={HandRaisedIcon} iconColorClass="text-red-400" />
           </div>
         </div>
       )}
       
-      <InfoSection titleKey="analysisDisplayReasoning" content={reasoningToDisplay} Icon={LightbulbIcon} />
+      <InfoSection 
+        titleKey="analysisDisplayReasoning" 
+        content={reasoningToDisplay ? <HighlightedText text={reasoningToDisplay} assetName={analysis.assetName} /> : reasoningToDisplay} 
+        Icon={LightbulbIcon} 
+        contentClass="font-poppins" 
+      />
 
       {analysis.patterns_identified && analysis.patterns_identified.length > 0 && (
         <div>
@@ -333,7 +590,9 @@ const FractalAnalysisDisplay: React.FC<FractalAnalysisDisplayProps> = ({ analysi
                     <PuzzlePieceIcon className="w-5 h-5 mr-2 text-primary-500 opacity-80" />
                     {getPatternName(pattern)}
                 </h4>
-                <p className="text-sm text-secondary-300 mt-1 whitespace-pre-wrap">{getPatternDescription(pattern)}</p>
+                <p className="text-sm text-secondary-300 mt-1 whitespace-pre-wrap font-poppins">
+                  <HighlightedText text={getPatternDescription(pattern)} assetName={analysis.assetName} />
+                </p>
               </li>
             ))}
           </ul>

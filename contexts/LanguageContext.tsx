@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, ReactNode } from 'react';
 import { Language } from '../i18n';
 
@@ -14,7 +13,7 @@ interface LanguageProviderProps {
 }
 
 export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>('en'); // Default language
+  const [language, setLanguage] = useState<Language>('es'); // Default language
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>

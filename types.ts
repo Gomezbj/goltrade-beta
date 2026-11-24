@@ -1,3 +1,4 @@
+
 export interface ImageFileData {
   base64Image: string;
   mimeType: string;
@@ -35,6 +36,7 @@ export interface BoundingBox {
 }
 
 export interface FractalAnalysisResult {
+  assetName?: string;
   patterns_identified: IdentifiedPattern[];
   trading_decision: TradingDecision;
   reasoning: string;
@@ -61,6 +63,52 @@ export interface HistoricalAnalysis {
   primaryImageData?: ImageFileData;
   expectedImageData?: ImageFileData;
 }
+
+export interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  nickname?: string;
+  passwordHash: string; // In a real app, this would be a securely generated hash
+  credits: number;
+  isBlocked: boolean;
+  role: 'user' | 'admin' | 'sub-admin';
+  contactNumber: string;
+  dateOfBirth: string;
+  registrationTimestamp: number;
+  profilePictureUrl?: string; // Can be a data URL
+  referralCodeUsed?: string;
+  ownReferralCode?: string;
+  accountType: 'demo' | 'pro' | 'enterprise';
+  consumedCredits?: number; // For sub-admins to track usage
+}
+
+export type ReactionType = 'like' | 'wow' | 'sad' | 'funny';
+
+export interface NewsItem {
+  id: string;
+  title: string;
+  content: string;
+  timestamp: number;
+  imageUrl?: string;
+  linkUrl?: string;
+  linkText?: string;
+  reactions: {
+    [key in ReactionType]: number;
+  };
+  reactedBy: {
+    [userId: string]: ReactionType;
+  };
+  targetAccountTypes?: ('demo' | 'pro' | 'enterprise')[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
+}
+
 
 export function isValidTradingDecision(value: string): value is TradingDecision {
   return Object.values(TradingDecision).includes(value as TradingDecision);

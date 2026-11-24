@@ -1,8 +1,8 @@
-import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
-import { FractalAnalysisResult, TradingDecision, ConfidenceLevel, isValidTradingDecision, isValidConfidenceLevel, IdentifiedPattern, BoundingBox } from '../types';
+import { GoogleGenAI, Type, Content } from "@google/genai";
+import { ImageFile, AnalysisData, Prediction } from "../types";
 import { GEMINI_MODEL_NAME, ANALYSIS_PROMPT } from '../constants';
 
-const API_KEY = process.env.API_KEY;
+const API_KEY = process.env.GEMINI_API_KEY;
 
 if (!API_KEY) {
   console.error("API_KEY for Gemini is not set. Please set the process.env.API_KEY environment variable.");
@@ -25,11 +25,12 @@ const isValidBoundingBox = (box: any): box is BoundingBox => {
 export const analyzeImageWithGemini = async (
   primaryImageBase64: string,
   primaryImageMimeType: string,
-  timeframe: string,
+  timeframe: string, // Timeframe for the primary image
   assetType: string,
   expectedImageBase64?: string | null,
   expectedImageMimeType?: string | null,
-  cvatJsonString?: string | null
+  cvatJsonString?: string | null,
+  secondTimeframe?: string | null // Timeframe for the second (expected) image
 ): Promise<FractalAnalysisResult> => {
   if (!API_KEY) {
     throw new Error("Gemini API Key is not configured. Cannot perform analysis.");
@@ -37,7 +38,8 @@ export const analyzeImageWithGemini = async (
 
   const contextualPrompt = ANALYSIS_PROMPT
     .replace(/\[ASSET_TYPE_PLACEHOLDER\]/g, assetType || "Not Specified")
-    .replace(/\[TIMEFRAME_PLACEHOLDER\]/g, timeframe || "Not Specified");
+    .replace(/\[TIMEFRAME_PLACEHOLDER\]/g, timeframe || "Not Specified") // Primary timeframe
+    .replace(/\[SECOND_TIMEFRAME_PLACEHOLDER\]/g, secondTimeframe || "Not Specified"); // Second image's timeframe
 
   const allParts: Part[] = [{ text: contextualPrompt }];
   
@@ -80,6 +82,10 @@ export const analyzeImageWithGemini = async (
 
     const parsedData = JSON.parse(jsonStr);
 
+    const assetNameFromAI = typeof parsedData.assetName === 'string' && parsedData.assetName.trim() !== ''
+      ? parsedData.assetName.trim()
+      : assetType; // Fallback to user-selected asset type
+
     const validatedPatterns: IdentifiedPattern[] = Array.isArray(parsedData.patterns_identified)
       ? parsedData.patterns_identified.map((p: any) => ({
           name: typeof p.name === 'string' ? p.name : "Unknown Pattern",
@@ -89,7 +95,7 @@ export const analyzeImageWithGemini = async (
         }))
       : [];
 
-    const tradingDecision = isValidTradingDecision(parsedData.trading_decision)
+    let tradingDecision = isValidTradingDecision(parsedData.trading_decision)
       ? parsedData.trading_decision
       : TradingDecision.NONE;
 
@@ -99,6 +105,11 @@ export const analyzeImageWithGemini = async (
     const confidenceLevel = parsedData.confidence_level && isValidConfidenceLevel(parsedData.confidence_level)
       ? parsedData.confidence_level
       : ConfidenceLevel.UNKNOWN;
+
+    // If confidence is Low or Unknown (less than 60%), override the decision to HOLD.
+    if (confidenceLevel === ConfidenceLevel.LOW || confidenceLevel === ConfidenceLevel.UNKNOWN) {
+        tradingDecision = TradingDecision.HOLD;
+    }
 
     const entry_points = typeof parsedData.entry_points === 'string' ? parsedData.entry_points : undefined;
     const entry_points_es = typeof parsedData.entry_points_es === 'string' ? parsedData.entry_points_es : undefined;
@@ -128,6 +139,7 @@ export const analyzeImageWithGemini = async (
       : [];
 
     return {
+      assetName: assetNameFromAI,
       patterns_identified: validatedPatterns,
       trading_decision: tradingDecision,
       reasoning: reasoning,
@@ -154,6 +166,7 @@ export const analyzeImageWithGemini = async (
     }
      const errorReasoning = `Error during analysis: ${errorMessage}. Please check console for details. The AI might have returned an unexpected format. Raw response: ${ (error as any)?.response?.text || 'N/A'}`;
      return {
+      assetName: assetType,
       patterns_identified: [],
       trading_decision: TradingDecision.NONE,
       reasoning: errorReasoning,
@@ -166,4 +179,17 @@ export const analyzeImageWithGemini = async (
       visual_take_profit_levels: [],
     };
   }
+};
+
+export const createChatForAnalysis = (analysisContext: FractalAnalysisResult): Chat => {
+  const systemInstruction = `You are Rosse-AI, an expert financial market analyst from GoldTrade. The user has just received an analysis from you. The original analysis is: ${JSON.stringify(analysisContext, null, 2)}. Now, answer the user's follow-up questions about this specific analysis. Keep your answers concise and directly related to the provided chart and analysis data. If the user asks who you are, introduce yourself as Rosse-AI. Do not refer to yourself as a generic AI or model. Speak as the analyst who provided the initial report.`;
+
+  const chat = ai.chats.create({
+    model: GEMINI_MODEL_NAME,
+    config: {
+      systemInstruction: systemInstruction,
+      temperature: 0.5,
+    },
+  });
+  return chat;
 };
